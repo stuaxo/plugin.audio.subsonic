@@ -2852,7 +2852,7 @@ class Connection(object):
 
         if self._useGET:
             url += '?%s' % data.getvalue()
-            req = urllib2.Request(url)
+            req = urllib.request.Request(url)
 
         return req
 
@@ -2879,7 +2879,7 @@ class Connection(object):
 
         if self._useGET:
             url += '?%s' % data.getvalue()
-            req = urllib2.Request(url)
+            req = urllib.request.Request(url)
 
         return req
 
