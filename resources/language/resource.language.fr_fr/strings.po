@@ -180,3 +180,43 @@ msgstr ""
 msgctxt "#30045"
 msgid "Search Albums"
 msgstr "Rechercher Albums"
+
+msgctxt "#30046"
+msgid "Could not connect to the Subsonic server"
+msgstr "Impossible de se connecter au serveur Subsonic"
+
+msgctxt "#30047"
+msgid "Authentication failed - check your username and password"
+msgstr "Échec de l'authentification - vérifiez votre nom d'utilisateur et votre mot de passe"
+
+msgctxt "#30048"
+msgid "Server API version mismatch"
+msgstr "Version de l'API du serveur incompatible"
+
+msgctxt "#30049"
+msgid "A username and password are required"
+msgstr "Un nom d'utilisateur et un mot de passe sont requis"
+
+msgctxt "#30050"
+msgid "Cannot reach the server - check the address and port"
+msgstr "Serveur injoignable - vérifiez l'adresse et le port"
+
+msgctxt "#30051"
+msgid "Could not update the starred status"
+msgstr "Impossible de mettre à jour les favoris"
+
+msgctxt "#30052"
+msgid "Set a download folder in the add-on settings first"
+msgstr "Définissez d'abord un dossier de téléchargement dans les paramètres"
+
+msgctxt "#30053"
+msgid "Downloading"
+msgstr "Téléchargement"
+
+msgctxt "#30054"
+msgid "%d track(s) could not be downloaded"
+msgstr "%d piste(s) n'ont pas pu être téléchargées"
+
+msgctxt "#30055"
+msgid "Download complete"
+msgstr "Téléchargement terminé"

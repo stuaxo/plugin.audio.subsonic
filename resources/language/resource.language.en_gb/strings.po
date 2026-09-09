@@ -180,3 +180,43 @@ msgstr ""
 msgctxt "#30045"
 msgid "Search Albums"
 msgstr ""
+
+msgctxt "#30046"
+msgid "Could not connect to the Subsonic server"
+msgstr ""
+
+msgctxt "#30047"
+msgid "Authentication failed - check your username and password"
+msgstr ""
+
+msgctxt "#30048"
+msgid "Server API version mismatch"
+msgstr ""
+
+msgctxt "#30049"
+msgid "A username and password are required"
+msgstr ""
+
+msgctxt "#30050"
+msgid "Cannot reach the server - check the address and port"
+msgstr ""
+
+msgctxt "#30051"
+msgid "Could not update the starred status"
+msgstr ""
+
+msgctxt "#30052"
+msgid "Set a download folder in the add-on settings first"
+msgstr ""
+
+msgctxt "#30053"
+msgid "Downloading"
+msgstr ""
+
+msgctxt "#30054"
+msgid "%d track(s) could not be downloaded"
+msgstr ""
+
+msgctxt "#30055"
+msgid "Download complete"
+msgstr ""

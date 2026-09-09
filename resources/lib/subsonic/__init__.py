@@ -1,0 +1,1 @@
+"""Subsonic add-on package."""
