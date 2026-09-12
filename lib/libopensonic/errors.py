@@ -1,43 +1,51 @@
 """
-This file is part of py-sonic.
+This file is part of py-opensonic.
 
-py-sonic is free software: you can redistribute it and/or modify
+py-opensonic is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-py-sonic is distributed in the hope that it will be useful,
+py-opensonic is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with py-sonic.  If not, see <http://www.gnu.org/licenses/>
+along with py-opensonic.  If not, see <http://www.gnu.org/licenses/>
 """
 
 class SonicError(Exception):
     pass
 
+
 class ParameterError(SonicError):
     pass
+
 
 class VersionError(SonicError):
     pass
 
+
 class CredentialError(SonicError):
     pass
+
 
 class AuthError(SonicError):
     pass
 
+
 class LicenseError(SonicError):
     pass
+
 
 class DataNotFoundError(SonicError):
     pass
 
+
 class ArgumentError(SonicError):
     pass
+
 
 # This maps the error code numbers from the Subsonic server to their
 # appropriate Exceptions
@@ -52,7 +60,16 @@ ERR_CODE_MAP = {
     70: DataNotFoundError ,
 }
 
+
 def getExcByCode(code):
+    """
+    Map a return code from the server to an error type.
+
+    code:int            The error code returned.
+
+    Returns a typed error if we can match the code, otherwise
+    return SonicError.
+    """
     code = int(code)
     if code in ERR_CODE_MAP:
         return ERR_CODE_MAP[code]

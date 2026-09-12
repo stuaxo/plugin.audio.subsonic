@@ -1,73 +1,65 @@
-"""Generators that walk the Subsonic API responses."""
+"""Generators that walk the OpenSubsonic API responses.
+
+libopensonic returns typed dataclasses rather than raw dicts, so these walk
+the object graph directly instead of chained ``.get(...)`` lookups.
+"""
 
 
 def walk_folders(conn):
-    response = conn.getMusicFolders()
-    yield from (response.get("musicFolders") or {}).get("musicFolder") or []
+    yield from conn.get_music_folders()
 
 
 def walk_index(conn, folder_id=None):
-    response = conn.getIndexes(folder_id)
-    for index in (response.get("indexes") or {}).get("index") or []:
-        yield from index.get("artist") or []
+    for index in conn.get_indexes(folder_id).index or []:
+        yield from index.artist or []
 
 
 def walk_directory(conn, directory_id, merge_artist=True):
-    response = conn.getMusicDirectory(directory_id)
-    for child in (response.get("directory") or {}).get("child") or []:
-        if merge_artist and child.get("isDir"):
-            yield from walk_directory(conn, child["id"], merge_artist)
+    for child in conn.get_music_directory(directory_id).child or []:
+        if merge_artist and child.is_dir:
+            yield from walk_directory(conn, child.id, merge_artist)
         else:
             yield child
 
 
 def walk_artists(conn):
-    response = conn.getArtists()
-    for index in (response.get("artists") or {}).get("index") or []:
-        yield from index.get("artist") or []
+    for index in conn.get_artists().index or []:
+        yield from index.artist or []
 
 
 def walk_artist(conn, artist_id):
-    response = conn.getArtist(artist_id)
-    yield from (response.get("artist") or {}).get("album") or []
+    yield from conn.get_artist(artist_id).album or []
 
 
-def walk_albums(conn, ltype, size=None, fromYear=None, toYear=None, genre=None, offset=None):
+def walk_albums(conn, ltype, size=None, from_year=None, to_year=None, genre=None, offset=None):
     if ltype == "byGenre" and genre is None:
         return
-    if ltype == "byYear" and (fromYear is None or toYear is None):
+    if ltype == "byYear" and (from_year is None or to_year is None):
         return
-    response = conn.getAlbumList2(
-        ltype=ltype, size=size, fromYear=fromYear, toYear=toYear, genre=genre, offset=offset
+    yield from conn.get_album_list2(
+        ltype=ltype, size=size, from_year=from_year, to_year=to_year, genre=genre, offset=offset
     )
-    yield from (response.get("albumList2") or {}).get("album") or []
 
 
 def walk_album(conn, album_id):
-    response = conn.getAlbum(album_id)
-    yield from (response.get("album") or {}).get("song") or []
+    yield from conn.get_album(album_id).song or []
 
 
 def walk_playlists(conn):
-    response = conn.getPlaylists()
-    yield from (response.get("playlists") or {}).get("playlist") or []
+    yield from conn.get_playlists()
 
 
 def walk_playlist(conn, playlist_id):
-    response = conn.getPlaylist(playlist_id)
-    yield from (response.get("playlist") or {}).get("entry") or []
+    yield from conn.get_playlist(playlist_id).entry or []
 
 
-def walk_tracks_random(conn, size=None, genre=None, fromYear=None, toYear=None):
-    response = conn.getRandomSongs(size=size, genre=genre, fromYear=fromYear, toYear=toYear)
-    yield from (response.get("randomSongs") or {}).get("song") or []
+def walk_tracks_random(conn, size=None, genre=None, from_year=None, to_year=None):
+    yield from conn.get_random_songs(size=size, genre=genre, from_year=from_year, to_year=to_year)
 
 
 def walk_tracks_starred(conn):
-    response = conn.getStarred()
-    yield from (response.get("starred") or {}).get("song") or []
+    yield from conn.get_starred().song or []
 
 
 def walk_genres(conn):
-    response = conn.getGenres()
-    yield from (response.get("genres") or {}).get("genre") or []
+    yield from conn.get_genres()

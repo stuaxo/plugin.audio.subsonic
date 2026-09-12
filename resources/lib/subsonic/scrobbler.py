@@ -4,22 +4,23 @@ import re
 
 import xbmc
 
-from . import addon
-from .client import get_connection
+from . import addon, client
 
 _PATTERN = re.compile(r"plugin://plugin\.audio\.subsonic/\?action=play_track&id=(.*?)&")
 
 
 def _scrobble_track(track_id):
-    conn = get_connection()
+    conn = client.get_connection()
     if conn is None:
         return False
-    result = conn.scrobble(track_id)
-    if result["status"] == "ok":
-        addon.notify("Scrobbled track")
-        return True
-    addon.notify("Scrobble failed")
-    return False
+    try:
+        conn.scrobble(track_id)
+    except Exception as exc:  # noqa: BLE001
+        addon.log_error("scrobble %s failed: %r" % (track_id, exc))
+        addon.notify("Scrobble failed")
+        return False
+    addon.notify("Scrobbled track")
+    return True
 
 
 def main():
@@ -50,3 +51,5 @@ def main():
             scrobbled = True
         except Exception as exc:  # noqa: BLE001
             xbmc.log("Subsonic service failed %s" % exc, xbmc.LOGINFO)
+
+    client.cleanup()

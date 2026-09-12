@@ -47,7 +47,7 @@ def refresh(forced=False):
     if conn is None:
         return
 
-    _ids = [song.get("id") for song in walk_tracks_starred(conn) if song.get("id")]
+    _ids = [song.id for song in walk_tracks_starred(conn) if song.id]
     _updated = time.time()
     _save()
 

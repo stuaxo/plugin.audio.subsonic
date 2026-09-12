@@ -1,13 +1,12 @@
 """Track / album downloading."""
 
 import os
-import shutil
 
 import xbmc
 import xbmcgui
+import xbmcvfs
 
-from . import addon, entries
-from .client import get_connection
+from . import addon, client, entries
 
 
 def download_item(params):
@@ -22,7 +21,7 @@ def download_item(params):
         return
 
     if item_type == "track":
-        did_action = _download_tracks(item_id)
+        did_action = _download_tracks([item_id])
     elif item_type == "album":
         did_action = _download_album(item_id)
     else:
@@ -37,63 +36,54 @@ def download_item(params):
 
 
 def _download_album(album_id):
-    conn = get_connection()
+    conn = client.get_connection()
     if conn is None:
-        return
-    album = (conn.getAlbum(album_id) or {}).get("album") or {}
-    ids = [track.get("id") for track in album.get("song") or []]
-    _download_tracks(ids)
+        return False
+    ids = [track.id for track in conn.get_album(album_id).song or []]
+    return _download_tracks(ids)
 
 
 def _download_tracks(ids):
+    ids = [i for i in ids if i]
     download_folder = addon.setting("download_folder")
-    if not download_folder:
-        return
-
-    if not ids:
-        return False
-    if not isinstance(ids, list) or isinstance(ids, tuple):
-        ids = [ids]
-    if len(ids) == 0:
+    if not download_folder or not ids:
         return False
 
-    conn = get_connection()
+    conn = client.get_connection()
     if conn is None:
-        return
+        return False
 
     step = 100 / len(ids)
-    parsed = 0
     progress = xbmcgui.DialogProgress()
     progress.create("Downloading tracks...")
 
-    for track_id in ids:
+    for parsed, track_id in enumerate(ids):
         if progress.iscanceled():
             return False
 
-        track = (conn.getSong(track_id) or {}).get("song")
-        pc = parsed * step
-        progress.update(int(pc), "Getting track informations...", entries.track_label(track, False))
+        track = conn.get_song(track_id)
+        pc = int(parsed * step)
+        progress.update(pc, "Getting track informations...", entries.track_label(track, False))
 
-        relative = track.get("path", None).encode("utf8", "replace")
-        track_path = os.path.join(download_folder, relative)
-        track_directory = os.path.dirname(os.path.abspath(track_path))
+        track_path = os.path.join(download_folder, track.path)
+        track_directory = os.path.dirname(track_path)
 
-        if os.path.isfile(track_path):
-            progress.update(int(pc), "Track has already been downloaded!")
-        else:
-            progress.update(int(pc), "Downloading track...", track_path)
-            try:
-                file_obj = conn.download(track_id)
-                if not os.path.exists(track_directory):
-                    os.makedirs(track_directory)
-                handle = open(track_path, "a")
-                shutil.copyfileobj(file_obj, handle)
-                handle.close()
-            except Exception:  # noqa: BLE001
-                addon.notify("Error while downloading track #%s" % track_id)
+        if xbmcvfs.exists(track_path):
+            progress.update(pc, "Track has already been downloaded!")
+            continue
 
-        parsed += 1
+        progress.update(pc, "Downloading track...", track_path)
+        try:
+            data = client.download_bytes(conn, track_id)
+            if track_directory and not xbmcvfs.exists(track_directory):
+                xbmcvfs.mkdirs(track_directory)
+            with xbmcvfs.File(track_path, "w") as handle:
+                handle.write(bytearray(data))
+        except Exception as exc:  # noqa: BLE001
+            addon.notify("Error while downloading track #%s" % track_id)
+            addon.log_error("download %s failed: %r" % (track_id, exc))
 
     progress.update(100, "Done !", "Enjoy !")
     xbmc.sleep(1000)
     progress.close()
+    return True

@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- xbmc.python 3.1.0 first ships with Kodi 22 "Piers" (Python 3.13). libopensonic
+     needs Python >= 3.10 (PEP 604 `X | Y` annotations evaluated eagerly at
+     import time) and pulls in aiohttp + mashumaro, neither vendored here yet -
+     see PACKAGING.md. Not installable on Kodi 19-21 (Python 3.8). -->
 <addon id="plugin.audio.subsonic" name="Subsonic" version="3.0.2" provider-name="BasilFX,warwickh">
     <requires>
-        <import addon="xbmc.python" version="3.0.0"/>
+        <import addon="xbmc.python" version="3.1.0"/>
     </requires>
     <extension point="xbmc.python.pluginsource" library="main.py">
         <provides>audio</provides>

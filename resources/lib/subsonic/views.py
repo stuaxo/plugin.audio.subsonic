@@ -101,8 +101,8 @@ def browse_folders(params):
 
     listing = [
         {
-            "label": item.get("name"),
-            "url": url_for("browse_indexes", folder_id=item.get("id"),
+            "label": item.name,
+            "url": url_for("browse_indexes", folder_id=item.id,
                            menu_id=params.get("menu_id")),
         }
         for item in library.walk_folders(conn)
@@ -120,8 +120,8 @@ def browse_indexes(params):
 
     listing = [
         {
-            "label": item.get("name"),
-            "url": url_for("list_directory", id=item.get("id"),
+            "label": item.name,
+            "url": url_for("list_directory", id=item.id,
                            menu_id=params.get("menu_id")),
         }
         for item in library.walk_index(conn, params.get("folder_id"))
@@ -138,10 +138,10 @@ def list_directory(params):
     merge = addon.setting_bool("merge")
     listing = []
     for item in library.walk_directory(conn, params.get("id"), merge):
-        if item.get("isDir"):
+        if item.is_dir:
             listing.append({
-                "label": item.get("title"),
-                "url": url_for("list_directory", id=item.get("id"),
+                "label": item.title,
+                "url": url_for("list_directory", id=item.id,
                                menu_id=params.get("menu_id")),
             })
         else:
@@ -244,7 +244,7 @@ def search(params):
         conn = client.get_connection()
         if conn is None:
             return
-        songs = (conn.search2(query=query).get("searchResult2") or {}).get("song")
+        songs = conn.search2(query=query).song
         if songs:
             listing = [entries.track_entry(conn, song, params) for song in songs]
 
@@ -262,8 +262,7 @@ def search_album(params):
         conn = client.get_connection()
         if conn is None:
             return
-        result = conn.search2(query=query, artistCount=0, songCount=0)
-        albums = (result.get("searchResult2") or {}).get("album")
+        albums = conn.search2(query=query, artist_count=0, song_count=0).album
         if albums:
             listing = [entries.album_entry(conn, album, params) for album in albums]
 
@@ -280,11 +279,11 @@ def play_track(params):
     if conn is None:
         return
 
-    url = conn.streamUrl(
+    url, _post_params = conn.get_stream_url(
         sid=params["id"],
-        maxBitRate=addon.setting("bitrate_streaming"),
-        tformat=addon.setting("transcode_format_streaming"),
-        estimateContentLength=True,
+        max_bit_rate=int(addon.setting("bitrate_streaming") or 0),
+        tformat=addon.setting("transcode_format_streaming") or None,
+        estimate_length=True,
     )
     set_resolved_url(url)
 
@@ -302,13 +301,13 @@ def star_item(params):
     if conn is None:
         return
 
-    sids = ids if item_type == "track" else None
-    album_ids = ids if item_type == "album" else None
-    artist_ids = ids if item_type == "artist" else None
+    sids = [ids] if item_type == "track" else None
+    album_ids = [ids] if item_type == "album" else None
+    artist_ids = [ids] if item_type == "artist" else None
 
     try:
-        response = (conn.unstar if unstar else conn.star)(sids, album_ids, artist_ids)
-        ok = response.get("status") == "ok"
+        (conn.unstar if unstar else conn.star)(sids, album_ids, artist_ids)
+        ok = True
     except Exception as exc:  # noqa: BLE001
         addon.log_error("star_item failed: %r" % exc)
         ok = False

@@ -1,27 +1,22 @@
 """Build listing-entry dicts (consumed by listing.build_list_item)."""
 
-import time
-from datetime import datetime
-
 from . import addon, cache
+from .client import art_path
 from .router import url_for
 
 STARRED_COLOUR = "FF00FF00"
 
 
-def convert_date(iso8601):
-    """'2012-04-17T19:53:44' -> '17.04.2012'."""
-    if not iso8601:
-        return ""
-    fmt = "%Y-%m-%dT%H:%M:%S"
-    try:
-        date_obj = datetime.strptime(iso8601.split(".")[0], fmt)
-    except (TypeError, ValueError):
-        try:
-            date_obj = datetime(*(time.strptime(iso8601.split(".")[0], fmt)[0:6]))
-        except ValueError:
-            return ""
-    return date_obj.strftime("%d.%m.%Y")
+def _get(item, name, default=None):
+    """getattr with a default - call sites see a mix of media_types classes
+    (e.g. search2's albums are Child objects, not AlbumID3) that don't all
+    carry the same fields.
+    """
+    return getattr(item, name, None) or default
+
+
+def _album_name(item):
+    return _get(item, "name") or _get(item, "title", "<Unknown>")
 
 
 def starred_label(item_id, label):
@@ -32,18 +27,18 @@ def starred_label(item_id, label):
 
 def track_label(item, hide_artist):
     if hide_artist:
-        label = item.get("title", "<Unknown>")
+        label = _get(item, "title", "<Unknown>")
     else:
-        label = "%s - %s" % (item.get("artist", "<Unknown>"), item.get("title", "<Unknown>"))
-    return starred_label(item.get("id"), label)
+        label = "%s - %s" % (_get(item, "artist", "<Unknown>"), _get(item, "title", "<Unknown>"))
+    return starred_label(item.id, label)
 
 
 def album_label(item, hide_artist):
     if hide_artist:
-        label = item.get("name", "<Unknown>")
+        label = _album_name(item)
     else:
-        label = "%s - %s" % (item.get("artist", "<Unknown>"), item.get("name", "<Unknown>"))
-    return starred_label(item.get("id"), label)
+        label = "%s - %s" % (_get(item, "artist", "<Unknown>"), _album_name(item))
+    return starred_label(item.id, label)
 
 
 # --- capability checks -------------------------------------------------------
@@ -81,78 +76,76 @@ def _context_menu(item_type, item_id):
 # --- entry builders --------------------------------------------------------
 
 def playlist_entry(conn, item, params):
-    image = conn.getCoverArtUrl(item.get("coverArt"))
+    image = art_path(conn, item.cover_art)
     return {
-        "label": item.get("name"),
+        "label": item.name,
         "thumb": image,
         "fanart": image,
-        "url": url_for("list_tracks", playlist_id=item.get("id"),
-                       menu_id=params.get("menu_id")),
+        "url": url_for("list_tracks", playlist_id=item.id, menu_id=params.get("menu_id")),
         "info": {"music": {
-            "title": item.get("name"),
-            "count": item.get("songCount"),
-            "duration": item.get("duration"),
-            "date": convert_date(item.get("created")),
+            "title": item.name,
+            "count": item.song_count,
+            "duration": item.duration,
+            "date": item.created,
         }},
     }
 
 
 def artist_entry(conn, item, params):
-    image = conn.getCoverArtUrl(item.get("coverArt"))
+    image = art_path(conn, item.cover_art)
     return {
-        "label": starred_label(item.get("id"), item.get("name")),
+        "label": starred_label(item.id, item.name),
         "thumb": image,
         "fanart": image,
-        "url": url_for("list_albums", artist_id=item.get("id"),
-                       menu_id=params.get("menu_id")),
+        "url": url_for("list_albums", artist_id=item.id, menu_id=params.get("menu_id")),
         "info": {"music": {
-            "artist": item.get("name"),
-            "count": item.get("albumCount"),
+            "artist": item.name,
+            "count": _get(item, "album_count"),
         }},
-        "context_menu": _context_menu("artist", item.get("id")),
+        "context_menu": _context_menu("artist", item.id),
     }
 
 
 def album_entry(conn, item, params):
-    image = conn.getCoverArtUrl(item.get("coverArt"))
+    image = art_path(conn, item.cover_art)
     return {
         "label": album_label(item, params.get("hide_artist", False)),
         "thumb": image,
         "fanart": image,
-        "url": url_for("list_tracks", album_id=item.get("id"),
-                       hide_artist=item.get("hide_artist"),
+        "url": url_for("list_tracks", album_id=item.id,
+                       hide_artist=params.get("hide_artist"),
                        menu_id=params.get("menu_id")),
         "info": {"music": {
-            "count": item.get("songCount"),
-            "date": convert_date(item.get("created")),
-            "duration": item.get("duration"),
-            "artist": item.get("artist"),
-            "album": item.get("name"),
-            "year": item.get("year"),
+            "count": _get(item, "song_count"),
+            "date": item.created,
+            "duration": _get(item, "duration"),
+            "artist": _get(item, "artist"),
+            "album": _album_name(item),
+            "year": _get(item, "year"),
         }},
-        "context_menu": _context_menu("album", item.get("id")),
+        "context_menu": _context_menu("album", item.id),
     }
 
 
 def track_entry(conn, item, params):
-    image = conn.getCoverArtUrl(item.get("coverArt"))
+    image = art_path(conn, item.cover_art)
     return {
         "label": track_label(item, params.get("hide_artist")),
         "thumb": image,
         "fanart": image,
-        "url": url_for("play_track", id=item.get("id"), menu_id=params.get("menu_id")),
+        "url": url_for("play_track", id=item.id, menu_id=params.get("menu_id")),
         "is_playable": True,
-        "mime": item.get("contentType"),
+        "mime": item.content_type,
         "info": {"music": {
-            "title": item.get("title"),
-            "album": item.get("album"),
-            "artist": item.get("artist"),
-            "tracknumber": item.get("tracknumber"),
-            "year": item.get("year"),
-            "genre": item.get("genre"),
-            "size": item.get("size"),
-            "duration": item.get("duration"),
-            "date": item.get("created"),
+            "title": item.title,
+            "album": item.album,
+            "artist": item.artist,
+            "tracknumber": item.track,
+            "year": item.year,
+            "genre": item.genre,
+            "size": item.size,
+            "duration": item.duration,
+            "date": item.created,
         }},
-        "context_menu": _context_menu("track", item.get("id")),
+        "context_menu": _context_menu("track", item.id),
     }
