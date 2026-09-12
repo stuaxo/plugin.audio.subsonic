@@ -180,3 +180,7 @@ msgstr ""
 msgctxt "#30045"
 msgid "Search Albums"
 msgstr ""
+
+msgctxt "#30046"
+msgid "API key (OpenSubsonic - leave blank to use username/password)"
+msgstr ""

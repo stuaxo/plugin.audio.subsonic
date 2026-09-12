@@ -12,8 +12,13 @@ _ROOT = xbmcaddon.Addon("plugin.audio.subsonic").getAddonInfo("path")
 for _sub in ("lib", os.path.join("resources", "lib")):
     sys.path.append(xbmcvfs.translatePath(os.path.join(_ROOT, _sub)))
 
-from subsonic import views  # noqa: E402,F401  (import registers the actions)
+from subsonic import client, views  # noqa: E402,F401  (views: import registers the actions)
 from subsonic.router import run  # noqa: E402
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    finally:
+        # Stops the connection's background event loop before this
+        # short-lived process exits.
+        client.cleanup()
