@@ -7,6 +7,11 @@ from . import addon
 _connection = None
 _failed = False
 
+# Some servers sit behind Cloudflare or another WAF that blocks the default
+# "Python-urllib/x.y" User-Agent. libsonic's userAgent= param (upstream since
+# 1.1.0) exists for exactly this - see lib/libsonic/PATCHES.md.
+_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0"
+
 
 def get_connection():
     """Return a live ``libsonic.Connection``, or ``None`` after a failed attempt."""
@@ -27,6 +32,7 @@ def get_connection():
             insecure=addon.setting_bool("insecure"),
             legacyAuth=addon.setting_bool("legacyauth"),
             useGET=addon.setting_bool("useget"),
+            userAgent=_USER_AGENT,
         )
         alive = conn.ping()
     except Exception:  # noqa: BLE001

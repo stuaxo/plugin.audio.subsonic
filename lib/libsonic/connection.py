@@ -31,11 +31,13 @@ import socket
 import ssl
 import sys
 import os
-import xbmc
 
 API_VERSION = '1.16.1'
 
 logger = logging.getLogger(__name__)
+
+
+# --- plugin.audio.subsonic patches: see lib/libsonic/PATCHES.md ---
 
 class HTTPSConnectionChain(http_client.HTTPSConnection):
     def _create_sock(self):
@@ -56,11 +58,6 @@ class HTTPSConnectionChain(http_client.HTTPSConnection):
 class HTTPSHandlerChain(urllib.request.HTTPSHandler):
     def https_open(self, req):
         return self.do_open(HTTPSConnectionChain, req, context=self._context)
-
-# install opener (commented out — the global installer has no insecure context,
-# which breaks TLS behind Cloudflare/WAF. Each connection builds its own
-# opener via _getOpener() with the correct context.)
-# urllib.request.install_opener(urllib.request.build_opener(HTTPSHandlerChain()))
 
 class PysHTTPRedirectHandler(urllib.request.HTTPRedirectHandler):
     """
@@ -92,10 +89,14 @@ class PysHTTPRedirectHandler(urllib.request.HTTPRedirectHandler):
                 fp,
             )
 
+# --- end patches ---
+
+
 class Connection(object):
     def __init__(self, baseUrl, username=None, password=None, port=4040,
             serverPath='/rest', appName='py-sonic', apiVersion=API_VERSION,
-            insecure=False, useNetrc=None, legacyAuth=False, useGET=True):
+            insecure=False, useNetrc=None, legacyAuth=False, useGET=False,
+            salt=None, token=None, userAgent=None, customHeaders=None):
         """
         This will create a connection to your subsonic server
 
@@ -125,6 +126,11 @@ class Connection(object):
         password:str        The password to use for the connection.  This
                             can be None if `useNetrc' is True (and you
                             have a valid entry in your netrc file)
+        salt:str            Instead of providing a password, the caller can
+                            provide both token and salt arguments for
+                            authenticaion, reducing the impact of plaintext
+                            passwords
+        token:str           Must be provided if the salt is provided.
         port:int            The port number to connect on.  The default for
                             unencrypted subsonic connections is 4040
         serverPath:str      The base resource path for the subsonic views.
@@ -156,30 +162,42 @@ class Connection(object):
         useGET:bool         Use a GET request instead of the default POST
                             request.  This is not recommended as request
                             URLs can get very long with some API calls
+        userAgent:str       If specified, use this User-Agent string in
+                            the request header.  If None, the default Python
+                            urllib UA will be used.  This is basically a
+                            shortcut instead of using `customHeaders`.
+        customHeaders:dict  A dictionary of custom headers that will be sent
+                            with each request.
         """
-        
+        # plugin.audio.subsonic patch: let baseUrl carry a subfolder
+        # (e.g. "http://host/subsonic") instead of requiring serverPath to
+        # be set separately - see lib/libsonic/PATCHES.md.
         self._baseUrl = baseUrl.rstrip('/')
         self._hostname = self._baseUrl.split('://')[1]
-        if len(self._hostname.split('/'))>1:
-            print(len(self._hostname.split('/')))
-            xbmc.log("Got a folder %s"%(self._hostname.split('/')[1]),xbmc.LOGDEBUG)
+        if len(self._hostname.split('/')) > 1:
             parts = urllib.parse.urlparse(self._baseUrl)
             self._baseUrl = "%s://%s" % (parts.scheme, parts.hostname)
             self._hostname = parts.hostname
             self._serverPath = parts.path.strip('/') + '/rest'
         else:
             self._serverPath = serverPath.strip('/')
+
         self._username = username
         self._rawPass = password
+        self._salt = salt
+        self._token = token
         self._legacyAuth = legacyAuth
         self._useGET = useGET
+        self._customHeaders = customHeaders if customHeaders else {}
+        if userAgent:
+            self._customHeaders['User-Agent'] = userAgent
 
         self._netrc = None
         if useNetrc is not None:
             self._process_netrc(useNetrc)
-        elif username is None or password is None:
+        elif username is None or (password is None and (salt is None or token is None)):
             raise CredentialError('You must specify either a username/password '
-                'combination or "useNetrc" must be either True or a string '
+                'combination or salt/token combination or "useNetrc" must be either True or a string '
                 'representing a path to a netrc file')
 
         self._port = int(port)
@@ -242,11 +260,9 @@ class Connection(object):
         viewName = '%s.view' % methodName
 
         req = self._getRequest(viewName)
-        xbmc.log("Pinging %s"%str(req.full_url),xbmc.LOGDEBUG)       
         try:
             res = self._doInfoReq(req)
-        except Exception as e:
-            print("Ping failed %s"%e)
+        except:
             return False
         if res['status'] == 'ok':
             return True
@@ -866,38 +882,11 @@ class Connection(object):
     def streamUrl(self, sid, maxBitRate=0, tformat=None, timeOffset=None,
             size=None, estimateContentLength=False, converted=False):
         """
-        since: 1.0.0
-
-        Downloads a given music file.
-
-        sid:str         The ID of the music file to download.
-        maxBitRate:int  (since: 1.2.0) If specified, the server will
-                        attempt to limit the bitrate to this value, in
-                        kilobits per second. If set to zero (default), no limit
-                        is imposed. Legal values are: 0, 32, 40, 48, 56, 64,
-                        80, 96, 112, 128, 160, 192, 224, 256 and 320.
-        tformat:str     (since: 1.6.0) Specifies the target format
-                        (e.g. "mp3" or "flv") in case there are multiple
-                        applicable transcodings (since: 1.9.0) You can use
-                        the special value "raw" to disable transcoding
-        timeOffset:int  (since: 1.6.0) Only applicable to video
-                        streaming.  Start the stream at the given
-                        offset (in seconds) into the video
-        size:str        (since: 1.6.0) The requested video size in
-                        WxH, for instance 640x480
-        estimateContentLength:bool  (since: 1.8.0) If set to True,
-                                    the HTTP Content-Length header
-                                    will be set to an estimated
-                                    value for trancoded media
-        converted:bool  (since: 1.14.0) Only applicable to video streaming.
-                        Subsonic can optimize videos for streaming by
-                        converting them to MP4. If a conversion exists for
-                        the video in question, then setting this parameter
-                        to "true" will cause the converted video to be
-                        returned instead of the original.
-
-        Returns the file-like object for reading or raises an exception
-        on error
+        plugin.audio.subsonic patch (not in upstream py-sonic) - see
+        lib/libsonic/PATCHES.md. Builds the same request as stream(), but
+        returns the fully-resolved URL instead of performing it, so a media
+        player can be pointed at it directly. Requires useGET=True: with
+        POST, req.full_url has no query string.
         """
         methodName = 'stream'
         viewName = '%s.view' % methodName
@@ -908,13 +897,10 @@ class Connection(object):
             'converted': converted})
 
         req = self._getRequest(viewName, q)
-        #xbmc.log("Requesting %s"%str(req.full_url),xbmc.LOGDEBUG)
         return_url = req.full_url
         if self._insecure:
             return_url += '&verifypeer=false'
-            xbmc.log("Request is insecure %s"%return_url,level=xbmc.LOGDEBUG)   
         return return_url
-
 
     def getCoverArt(self, aid, size=None):
         """
@@ -941,15 +927,10 @@ class Connection(object):
 
     def getCoverArtUrl(self, aid, size=None):
         """
-        since: 1.0.0
-
-        Returns a cover art image
-
-        aid:str     ID string for the cover art image to download
-        size:int    If specified, scale image to this size
-
-        Returns the file-like object for reading or raises an exception
-        on error
+        plugin.audio.subsonic patch (not in upstream py-sonic) - see
+        lib/libsonic/PATCHES.md. Same as getCoverArt(), but returns the
+        fully-resolved URL instead of fetching the image. Requires
+        useGET=True: with POST, req.full_url has no query string.
         """
         methodName = 'getCoverArt'
         viewName = '%s.view' % methodName
@@ -957,13 +938,10 @@ class Connection(object):
         q = self._getQueryDict({'id': aid, 'size': size})
 
         req = self._getRequest(viewName, q)
-        #xbmc.log("Requesting %s"%str(req.full_url),xbmc.LOGDEBUG)
         return_url = req.full_url
         if self._insecure:
             return_url += '&verifypeer=false'
-            xbmc.log("Request is insecure %s"%return_url,level=xbmc.LOGDEBUG)   
         return return_url
-
 
     def scrobble(self, sid, submission=True, listenTime=None):
         """
@@ -1332,7 +1310,7 @@ class Connection(object):
         return res
 
     def getAlbumList2(self, ltype, size=10, offset=0, fromYear=None,
-            toYear=None, genre=None):
+            toYear=None, genre=None, musicFolderId=None):
         """
         since 1.8.0
 
@@ -1354,6 +1332,8 @@ class Connection(object):
                         specify toYear
         genre:str       The name of the genre e.g. "Rock".  You must specify
                         genre if you set the ltype to "byGenre"
+        musicFolderId:int   Only return albums in the music folder with the
+                            given ID.  See getMusicFolders()
 
         Returns a dict like the following:
            {u'albumList2': {u'album': [{u'artist': u'Massive Attack',
@@ -1381,7 +1361,7 @@ class Connection(object):
 
         q = self._getQueryDict({'type': ltype, 'size': size,
             'offset': offset, 'fromYear': fromYear, 'toYear': toYear,
-            'genre': genre})
+            'genre': genre, 'musicFolderId': musicFolderId})
 
         req = self._getRequest(viewName, q)
         res = self._doInfoReq(req)
@@ -1729,9 +1709,12 @@ class Connection(object):
         self._checkStatus(res)
         return res
 
-    def getArtists(self):
+    def getArtists(self, musicFolderId=None):
         """
         since 1.8.0
+
+        musicFolderId:int   The folder id to return artists from.  See
+                            getMusicFolders()
 
         Similar to getIndexes(), but this method uses the ID3 tags to
         determine the artist
@@ -1754,7 +1737,9 @@ class Connection(object):
         methodName = 'getArtists'
         viewName = '%s.view' % methodName
 
-        req = self._getRequest(viewName)
+        q = self._getQueryDict({'musicFolderId': musicFolderId})
+
+        req = self._getRequest(viewName, q)
         res = self._doInfoReq(req)
         self._checkStatus(res)
         return res
@@ -2009,7 +1994,6 @@ class Connection(object):
             q['musicFolderId'] = musicFolderId
 
         req = self._getRequest(viewName, q)
-        xbmc.log("Requesting %s"%str(req.full_url),xbmc.LOGDEBUG)        
         res = self._doInfoReq(req)
         self._checkStatus(res)
         return res
@@ -2501,8 +2485,6 @@ class Connection(object):
 
         req = self._getRequest(viewName, q)
         res = self._doInfoReq(req)
-        print(req.get_full_url())
-        print(res)
         self._checkStatus(res)
         return res
 
@@ -2586,6 +2568,7 @@ class Connection(object):
         """
         methodName = 'savePlayQueue'
         viewName = '%s.view' % methodName
+
         if not isinstance(qids, (tuple, list)):
             qids = [qids]
 
@@ -2661,7 +2644,7 @@ class Connection(object):
 
         Returns True if refresh successful, False otherwise
         """
-        methodName = 'scanNow'
+        viewName = 'scanNow'
         return self._unsupportedAPIFunction(methodName)
 
     def cleanupDatabase(self):
@@ -2677,7 +2660,7 @@ class Connection(object):
         By cleaning up the database, information about files that are
         no longer in your media collection is permanently removed.
         """
-        methodName = 'expunge'
+        viewName = 'expunge'
         return self._unsupportedAPIFunction(methodName)
 
     def getVideoInfo(self, vid):
@@ -2692,8 +2675,7 @@ class Connection(object):
         methodName = 'getVideoInfo'
         viewName = '%s.view' % methodName
 
-        #q = {'id': int(vid)}
-        q = {'id': vid}
+        q = {'id': int(vid)}
         req = self._getRequest(viewName, q)
         res = self._doInfoReq(req)
         self._checkStatus(res)
@@ -2710,7 +2692,6 @@ class Connection(object):
         methodName = 'getAlbumInfo'
         viewName = '%s.view' % methodName
 
-        #q = {'id': int(aid)}
         q = {'id': aid}
         req = self._getRequest(viewName, q)
         res = self._doInfoReq(req)
@@ -2728,7 +2709,6 @@ class Connection(object):
         methodName = 'getAlbumInfo2'
         viewName = '%s.view' % methodName
 
-        #q = {'id': int(aid)}
         q = {'id': aid}
         req = self._getRequest(viewName, q)
         res = self._doInfoReq(req)
@@ -2748,8 +2728,7 @@ class Connection(object):
         methodName = 'getCaptions'
         viewName = '%s.view' % methodName
 
-        #q = self._getQueryDict({'id': int(vid), 'format': fmt})
-        q = self._getQueryDict({'id': vid, 'format': fmt})
+        q = self._getQueryDict({'id': int(vid), 'format': fmt})
         req = self._getRequest(viewName, q)
         res = self._doInfoReq(req)
         self._checkStatus(res)
@@ -2767,7 +2746,7 @@ class Connection(object):
 
         url = '%s:%d/%s/%s?%s' % (self._baseUrl, self._port,
             self._separateServerPath(), viewName, methodName)
-        req = urllib.request.Request(url)
+        req = urllib.request.Request(url, headers=self._customHeaders)
         res = self._opener.open(req)
         res_msg = res.msg.lower()
         return res_msg == 'ok'
@@ -2776,21 +2755,16 @@ class Connection(object):
     # Private internal methods
     #
     def _getOpener(self, username, passwd):
-        # Context is only relevent in >= python 2.7.9
+        # plugin.audio.subsonic patch: follow http<->https redirects (upstream's
+        # HTTPRedirectHandler drops POST data on redirect) and support
+        # insecure=True for self-signed certs - see lib/libsonic/PATCHES.md.
         https_chain = HTTPSHandlerChain()
-        if sys.version_info[:3] >= (2, 7, 9) and self._insecure:
-            https_chain = HTTPSHandlerChain(
-                context=ssl._create_unverified_context())
-        opener = urllib.request.build_opener(
+        if self._insecure:
+            https_chain = HTTPSHandlerChain(context=ssl._create_unverified_context())
+        return urllib.request.build_opener(
             PysHTTPRedirectHandler,
             https_chain,
         )
-        # Set a browser-like User-Agent so Cloudflare and other WAFs
-        # don't block requests (Python-urllib/3.x is often blocked).
-        opener.addheaders = [
-            ("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0"),
-        ]
-        return opener
 
     def _getQueryDict(self, d):
         """
@@ -2812,8 +2786,12 @@ class Connection(object):
         if self._legacyAuth:
             qdict['p'] = 'enc:%s' % self._hexEnc(self._rawPass)
         else:
-            salt = self._getSalt()
-            token = md5((self._rawPass + salt).encode('utf-8')).hexdigest()
+            if self._rawPass:
+                salt = self._getSalt()
+                token = md5((self._rawPass + salt).encode('utf-8')).hexdigest()
+            else:
+                salt = self._salt
+                token = self._token
             qdict.update({
                 's': salt,
                 't': token,
@@ -2826,13 +2804,16 @@ class Connection(object):
         qdict.update(query)
         url = '%s:%d/%s/%s' % (self._baseUrl, self._port, self._serverPath,
             viewName)
-        #xbmc.log("Standard URL %s"%url,level=xbmc.LOGDEBUG)
-        #xbmc.log("Qdict %s"%str(qdict),level=xbmc.LOGDEBUG)
-        req = urllib.request.Request(url, urlencode(qdict).encode('utf-8'))
-        if(self._useGET or ('getCoverArt' in viewName) or ('stream' in viewName)):
+        req = urllib.request.Request(
+            url,
+            urlencode(qdict).encode('utf-8'),
+            headers=self._customHeaders,
+        )
+
+        if self._useGET:
             url += '?%s' % urlencode(qdict)
-            #xbmc.log("UseGET URL %s"%(url),xbmc.LOGDEBUG)
-            req = urllib.request.Request(url)
+            req = urllib.request.Request(url, headers=self._customHeaders)
+
         return req
 
     def _getRequestWithList(self, viewName, listName, alist, query={}):
@@ -2848,11 +2829,15 @@ class Connection(object):
         data.write(urlencode(qdict))
         for i in alist:
             data.write('&%s' % urlencode({listName: i}))
-        req = urllib.request.Request(url, data.getvalue().encode('utf-8'))
+        req = urllib.request.Request(
+            url,
+            data.getvalue().encode('utf-8'),
+            headers=self._customHeaders,
+        )
 
         if self._useGET:
             url += '?%s' % data.getvalue()
-            req = urllib2.Request(url)
+            req = urllib.request.Request(url, headers=self._customHeaders)
 
         return req
 
@@ -2875,11 +2860,15 @@ class Connection(object):
         for k, l in listMap.items():
             for i in l:
                 data.write('&%s' % urlencode({k: i}))
-        req = urllib.request.Request(url, data.getvalue().encode('utf-8'))
+        req = urllib.request.Request(
+            url,
+            data.getvalue().encode('utf-8'),
+            headers=self._customHeaders,
+        )
 
         if self._useGET:
             url += '?%s' % data.getvalue()
-            req = urllib2.Request(url)
+            req = urllib.request.Request(url, headers=self._customHeaders)
 
         return req
 
